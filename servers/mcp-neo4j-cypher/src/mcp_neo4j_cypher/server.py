@@ -59,13 +59,71 @@ def create_mcp_server(neo4j_driver: AsyncDriver, database: str = "neo4j", namesp
         """
 
         get_schema_query = """
-call apoc.meta.data() yield label, property, type, other, unique, index, elementType
-where elementType = 'node' and not label starts with '_'
-with label, 
-    collect(case when type <> 'RELATIONSHIP' then [property, type + case when unique then " unique" else "" end + case when index then " indexed" else "" end] end) as attributes,
-    collect(case when type = 'RELATIONSHIP' then [property, head(other)] end) as relationships
-RETURN label, apoc.map.fromPairs(attributes) as attributes, apoc.map.fromPairs(relationships) as relationships
-"""
+        CALL apoc.meta.schema();
+        """
+
+        def clean_schema(schema: dict) -> dict:
+            cleaned = {}
+
+            for key, entry in schema.items():
+
+                new_entry = {
+                    "type": entry["type"]
+                }
+                if "count" in entry:
+                    new_entry["count"] = entry["count"]
+
+                labels = entry.get("labels", [])
+                if labels:
+                    new_entry["labels"] = labels
+
+                props = entry.get("properties", {})
+                clean_props = {}
+                for pname, pinfo in props.items():
+                    cp = {}
+                    if "indexed" in pinfo:
+                        cp["indexed"] = pinfo["indexed"]
+                    if "type" in pinfo:
+                        cp["type"] = pinfo["type"]
+                    if cp:
+                        clean_props[pname] = cp
+                if clean_props:
+                    new_entry["properties"] = clean_props
+
+                if entry.get("relationships"):
+                    rels_out = {}
+                    for rel_name, rel in entry["relationships"].items():
+                        cr = {}
+                        if "direction" in rel:
+                            cr["direction"] = rel["direction"]
+                        # nested labels
+                        rlabels = rel.get("labels", [])
+                        if rlabels:
+                            cr["labels"] = rlabels
+                        # nested properties
+                        rprops = rel.get("properties", {})
+                        clean_rprops = {}
+                        for rpname, rpinfo in rprops.items():
+                            crp = {}
+                            if "indexed" in rpinfo:
+                                crp["indexed"] = rpinfo["indexed"]
+                            if "type" in rpinfo:
+                                crp["type"] = rpinfo["type"]
+                            if crp:
+                                clean_rprops[rpname] = crp
+                        if clean_rprops:
+                            cr["properties"] = clean_rprops
+
+                        if cr:
+                            rels_out[rel_name] = cr
+
+                    if rels_out:
+                        new_entry["relationships"] = rels_out
+
+                cleaned[key] = new_entry
+
+            return cleaned
+
 
         try:
             async with neo4j_driver.session(database=database) as session:
@@ -75,11 +133,18 @@ RETURN label, apoc.map.fromPairs(attributes) as attributes, apoc.map.fromPairs(r
 
                 logger.debug(f"Read query returned {len(results_json_str)} rows")
 
-                return [types.TextContent(type="text", text=results_json_str)]
+                schema = json.loads(results_json_str)[0].get('value')
+                schema_clean = clean_schema(schema)
+                schema_clean_str = json.dumps(schema_clean)
+
+                return types.CallToolResult(content=[types.TextContent(type="text", text=schema_clean_str)])
 
         except Exception as e:
             logger.error(f"Database error retrieving schema: {e}")
-            return [types.TextContent(type="text", text=f"Error: {e}")]
+            return types.CallToolResult(
+                isError=True, 
+                content=[types.TextContent(type="text", text=f"Error: {e}")]
+            )
 
     async def read_neo4j_cypher(
         query: str = Field(..., description="The Cypher query to execute."),
@@ -89,22 +154,25 @@ RETURN label, apoc.map.fromPairs(attributes) as attributes, apoc.map.fromPairs(r
     ) -> list[types.TextContent]:
         """Execute a read Cypher query on the neo4j database."""
 
-        if _is_write_query(query):
-            raise ValueError("Only MATCH queries are allowed for read-query")
-
         try:
+            if _is_write_query(query):
+                raise ValueError("Only MATCH queries are allowed for read-query")
+        
             async with neo4j_driver.session(database=database) as session:
                 results_json_str = await session.execute_read(_read, query, params)
 
                 logger.debug(f"Read query returned {len(results_json_str)} rows")
 
-                return [types.TextContent(type="text", text=results_json_str)]
+                return types.CallToolResult(content=[types.TextContent(type="text", text=results_json_str)])
 
         except Exception as e:
             logger.error(f"Database error executing query: {e}\n{query}\n{params}")
-            return [
+            return types.CallToolResult(
+                isError=True, 
+                content=[
                 types.TextContent(type="text", text=f"Error: {e}\n{query}\n{params}")
             ]
+            )
 
     async def write_neo4j_cypher(
         query: str = Field(..., description="The Cypher query to execute."),
@@ -114,10 +182,10 @@ RETURN label, apoc.map.fromPairs(attributes) as attributes, apoc.map.fromPairs(r
     ) -> list[types.TextContent]:
         """Execute a write Cypher query on the neo4j database."""
 
-        if not _is_write_query(query):
-            raise ValueError("Only write queries are allowed for write-query")
-
         try:
+            if not _is_write_query(query):
+                raise ValueError("Only write queries are allowed for write-query")
+        
             async with neo4j_driver.session(database=database) as session:
                 raw_results = await session.execute_write(_write, query, params)
                 counters_json_str = json.dumps(
@@ -126,13 +194,16 @@ RETURN label, apoc.map.fromPairs(attributes) as attributes, apoc.map.fromPairs(r
 
             logger.debug(f"Write query affected {counters_json_str}")
 
-            return [types.TextContent(type="text", text=counters_json_str)]
+            return types.CallToolResult(content=[types.TextContent(type="text", text=counters_json_str)])
 
         except Exception as e:
             logger.error(f"Database error executing query: {e}\n{query}\n{params}")
-            return [
+            return types.CallToolResult(
+                isError=True, 
+                content=[
                 types.TextContent(type="text", text=f"Error: {e}\n{query}\n{params}")
             ]
+            )
 
     namespace_prefix = _format_namespace(namespace)
     

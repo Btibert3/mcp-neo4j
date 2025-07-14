@@ -39,6 +39,12 @@ This is useful when you need to connect to multiple Neo4j databases or instances
 
 ## 🔧 Usage with Claude Desktop
 
+### Using DXT
+Download the latest `.dxt` file from the [releases page](https://github.com/neo4j-contrib/mcp-neo4j/releases/latest) and install it with your MCP client.
+
+Or use this direct link:
+[Download mcp-neo4j-cypher.dxt](https://github.com/neo4j-contrib/mcp-neo4j/releases/latest/download/mcp-neo4j-cypher.dxt)
+
 ### 💾 Released Package
 
 Can be found on PyPi https://pypi.org/project/mcp-neo4j-cypher/

@@ -9,12 +9,15 @@ from mcp.server import FastMCP
 async def test_get_neo4j_schema(mcp_server: FastMCP, init_data: Any):
     response = await mcp_server.call_tool("get_neo4j_schema", dict())
 
-    schema = json.loads(response[0].text)[0]
-
+    temp_parsed = json.loads(response[0].text)['content'][0]['text']
+    schema = json.loads(temp_parsed)
+    
     # Verify the schema result
-    assert "label" in schema
-    assert "attributes" in schema
-    assert "relationships" in schema
+    assert "Person" in schema
+    assert schema['Person']['count'] == 3
+    assert len(schema['Person']['properties']) == 2
+    assert "FRIEND" in schema['Person']['relationships']
+    
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -22,8 +25,7 @@ async def test_write_neo4j_cypher(mcp_server: FastMCP):
     # Execute a Cypher query to create a node
     query = "CREATE (n:Test {name: 'test', age: 123}) RETURN n.name"
     response = await mcp_server.call_tool("write_neo4j_cypher", dict(query=query))
-
-    result = json.loads(response[0].text)
+    result = json.loads(json.loads(response[0].text)['content'][0]['text'])
     # Verify the node creation
     assert len(result) == 4
     assert result["nodes_created"] == 1
@@ -43,7 +45,7 @@ async def test_read_neo4j_cypher(mcp_server: FastMCP, init_data: Any):
     """
 
     response = await mcp_server.call_tool("read_neo4j_cypher", dict(query=query))
-    result = json.loads(response[0].text)
+    result = json.loads(json.loads(response[0].text)['content'][0]['text'])
     # # Verify the query result
     assert len(result) == 2
     assert result[0]["person"] == "Alice"

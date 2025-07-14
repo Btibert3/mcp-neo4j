@@ -1,10 +1,15 @@
 ## Next
 
 ### Fixed
+* Updated the `get_neo4j_schema` tool to include Relationship properties as well
 
 ### Changed
+* Update error handling in read and write tools
 
 ### Added
+* Add .dxt file for Cypher MCP server
+* Add .dxt file generation to Cypher MCP Publish GitHub action
+* Add error indicator to tool results in the `CallToolResult` object
 
 ## v0.2.4
 
